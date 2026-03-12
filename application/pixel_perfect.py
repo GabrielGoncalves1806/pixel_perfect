@@ -2,9 +2,9 @@ import sys
 from PyQt6.QtWidgets import (
     QApplication, QWidget, QLabel, QSlider,
     QVBoxLayout, QHBoxLayout, QFileDialog,
-    QScrollArea, QFrame, QLineEdit
+    QScrollArea, QFrame, QLineEdit, QPushButton
 )
-from PyQt6.QtGui import QPixmap
+from PyQt6.QtGui import QPixmap, QPainter
 from PyQt6.QtCore import Qt
 
 
@@ -14,6 +14,7 @@ class Overlay(QWidget):
         super().__init__()
         
         self.image_path = image_path
+        self.original_pixmap = QPixmap(self.image_path)
 
         self.setWindowTitle("Pixel Perfect Overlay")
 
@@ -36,6 +37,8 @@ class Overlay(QWidget):
         self.opacity_slider.setValue(100)
         self.opacity_slider.valueChanged.connect(self.change_opacity)
 
+        self.current_alpha = 1.0
+
         self.scale_multiplier = 10  # allow tenths of a percent
 
         self.scale_slider = QSlider(Qt.Orientation.Horizontal)
@@ -48,6 +51,9 @@ class Overlay(QWidget):
         self.scale_input.setMaximumWidth(70)
         self.scale_input.returnPressed.connect(self.update_scale_from_input)
 
+        self.change_image_button = QPushButton("Trocar imagem")
+        self.change_image_button.clicked.connect(self.select_new_image)
+
         control_layout.addWidget(QLabel("Opacidade"))
         control_layout.addWidget(self.opacity_slider)
 
@@ -57,6 +63,7 @@ class Overlay(QWidget):
         scale_layout.addWidget(self.scale_input)
         
         control_layout.addLayout(scale_layout)
+        control_layout.addWidget(self.change_image_button)
 
         control_panel.setLayout(control_layout)
 
@@ -65,7 +72,7 @@ class Overlay(QWidget):
         # -------------------------
 
         self.image_label = QLabel()
-        self.image_label.setPixmap(QPixmap(image_path))
+        self.refresh_image()
 
         self.scroll_area = QScrollArea()
         self.scroll_area.setWidget(self.image_label)
@@ -77,21 +84,11 @@ class Overlay(QWidget):
         self.setLayout(main_layout)
 
     def change_opacity(self, value):
-        self.setWindowOpacity(value / 100)
+        self.current_alpha = value / 100
+        self.refresh_image()
 
     def change_scale(self, slider_value):
-        scale_percent = slider_value / self.scale_multiplier
-        self.scale_factor = scale_percent / 100
-        self.scale_input.setText(self._format_scale_text(slider_value))
-
-        scaled = QPixmap(self.image_path).scaled(
-            QPixmap(self.image_path).size() * self.scale_factor,
-            Qt.AspectRatioMode.KeepAspectRatio,
-            Qt.TransformationMode.FastTransformation
-        )
-
-        self.image_label.setPixmap(scaled)
-        self.image_label.resize(scaled.size())
+        self.apply_scale(slider_value)
 
     def update_scale_from_input(self):
         try:
@@ -112,6 +109,50 @@ class Overlay(QWidget):
         else:
             scale_percent = float(slider_value)
         return f"{scale_percent:.1f}"
+
+    def apply_scale(self, slider_value=None):
+        if slider_value is None:
+            slider_value = self.scale_slider.value()
+        scale_percent = slider_value / self.scale_multiplier
+        self.scale_factor = scale_percent / 100
+        self.scale_input.setText(self._format_scale_text(slider_value))
+        self.refresh_image()
+
+    def select_new_image(self):
+        file, _ = QFileDialog.getOpenFileName(
+            self,
+            "Escolha a imagem",
+            "",
+            "Images (*.png *.jpg *.bmp)"
+        )
+        if file:
+            self.image_path = file
+            self.original_pixmap = QPixmap(self.image_path)
+            self.apply_scale()
+
+    def refresh_image(self):
+        if self.original_pixmap.isNull():
+            return
+
+        target_size = self.original_pixmap.size() * self.scale_factor if hasattr(self, 'scale_factor') else self.original_pixmap.size()
+        scaled = self.original_pixmap.scaled(
+            target_size,
+            Qt.AspectRatioMode.KeepAspectRatio,
+            Qt.TransformationMode.FastTransformation
+        )
+
+        if self.current_alpha >= 0.995:
+            display_pixmap = scaled
+        else:
+            display_pixmap = QPixmap(scaled.size())
+            display_pixmap.fill(Qt.GlobalColor.transparent)
+            painter = QPainter(display_pixmap)
+            painter.setOpacity(self.current_alpha)
+            painter.drawPixmap(0, 0, scaled)
+            painter.end()
+
+        self.image_label.setPixmap(display_pixmap)
+        self.image_label.resize(display_pixmap.size())
 
 
 app = QApplication(sys.argv)
