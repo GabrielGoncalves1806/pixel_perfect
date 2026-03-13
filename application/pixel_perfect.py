@@ -16,6 +16,10 @@ class Overlay(QWidget):
         self.image_path = image_path
         self.original_pixmap = QPixmap(self.image_path)
 
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
+        self.setAutoFillBackground(False)
+        self.setStyleSheet("background: transparent;")
+
         self.setWindowTitle("Pixel Perfect Overlay")
 
         # 👇 sempre no topo
@@ -30,6 +34,7 @@ class Overlay(QWidget):
         # -------------------------
 
         control_panel = QFrame()
+        control_panel.setStyleSheet("background-color: rgba(30, 30, 30, 0.9);")
         control_layout = QHBoxLayout()
 
         self.opacity_slider = QSlider(Qt.Orientation.Horizontal)
@@ -37,6 +42,7 @@ class Overlay(QWidget):
         self.opacity_slider.setValue(100)
         self.opacity_slider.valueChanged.connect(self.change_opacity)
 
+        self.window_opacity_supported = sys.platform != "linux"
         self.current_alpha = 1.0
 
         self.scale_multiplier = 10  # allow tenths of a percent
@@ -72,11 +78,15 @@ class Overlay(QWidget):
         # -------------------------
 
         self.image_label = QLabel()
+        self.image_label.setStyleSheet("background: transparent;")
         self.refresh_image()
 
         self.scroll_area = QScrollArea()
         self.scroll_area.setWidget(self.image_label)
         self.scroll_area.setWidgetResizable(False)
+        self.scroll_area.setFrameShape(QFrame.Shape.NoFrame)
+        self.scroll_area.setStyleSheet("background: transparent;")
+        self.scroll_area.viewport().setStyleSheet("background: transparent;")
 
         main_layout.addWidget(control_panel)
         main_layout.addWidget(self.scroll_area)
@@ -85,7 +95,10 @@ class Overlay(QWidget):
 
     def change_opacity(self, value):
         self.current_alpha = value / 100
-        self.refresh_image()
+        if self.window_opacity_supported:
+            self.setWindowOpacity(self.current_alpha)
+        else:
+            self.refresh_image()
 
     def change_scale(self, slider_value):
         self.apply_scale(slider_value)
@@ -141,7 +154,7 @@ class Overlay(QWidget):
             Qt.TransformationMode.FastTransformation
         )
 
-        if self.current_alpha >= 0.995:
+        if self.window_opacity_supported or self.current_alpha >= 0.995:
             display_pixmap = scaled
         else:
             display_pixmap = QPixmap(scaled.size())
